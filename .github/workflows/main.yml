@@ -1,0 +1,50 @@
+name: Copy Notion Body to Github PR
+on:
+  pull_request:
+    types:
+      - opened
+      - synchronize
+
+jobs:
+  invoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: node --version
+
+      - name: Extract Notion Page ID
+        run: |
+          page_id=$(echo "${{ github.event.pull_request.body }}" | sed -n 's/.*\[Notion Link\](https:\/\/www\.notion\.so\/\([^)]*\)).*/\1/p' | sed 's|^[^/]*\/||' | sed 's|.*-||' | sed 's|\?.*||' )
+          echo "NOTION_PAGE_ID=$page_id" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Fetch Notion Page and Create Text on Node.js
+        run: |
+          npm install
+          echo $(node notion.js)
+          output=$(node notion.js)
+          insert_body=$(cat <<EOF
+          <details>
+          <summary>Notion Content</summary>
+
+          $output
+
+          </details>
+          EOF
+          )
+          base_body=$(echo "${{ github.event.pull_request.body }}" | sed '/<details>/,/<\/details>/d')
+          update_body="$base_body $insert_body"
+          echo $update_body
+          gh pr edit $PULL_REQUEST --body "$update_body"
+        working-directory: .github/workflows
+        env:
+          NOTION_SECRET: ${{ secrets.NOTION_SECRET }}
+          GH_TOKEN: ${{ secrets.GHA_TOKEN }}
+          PULL_REQUEST: ${{ github.event.pull_request.html_url }}
